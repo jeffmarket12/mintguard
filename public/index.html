@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MintGuard — read-only pre-mint checker for BSC</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 760px; margin: 2em auto; padding: 0 1em; color: #1a1a1a; line-height: 1.5; }
+  h1 { font-size: 1.6em; margin-bottom: 0.1em; }
+  .sub { color: #555; margin-top: 0; }
+  form { background: #f6f6f6; padding: 1em; border-radius: 8px; margin: 1em 0; }
+  label { display: block; font-weight: 600; margin-top: 0.6em; }
+  input[type=text] { width: 100%; box-sizing: border-box; padding: 0.5em; margin-top: 0.2em; font-family: monospace; }
+  button { margin-top: 1em; padding: 0.6em 1.4em; font-size: 1em; cursor: pointer; }
+  .verdict { font-size: 1.3em; font-weight: 700; padding: 0.4em 0.6em; border-radius: 6px; display: inline-block; margin: 0.5em 0; }
+  .SAFE_TO_REVIEW { background: #e0f2e9; color: #1a6b3c; }
+  .CAUTION { background: #fef3d8; color: #8a6d00; }
+  .HIGH_RISK { background: #fde8e8; color: #a12020; }
+  table { border-collapse: collapse; width: 100%; margin-top: 1em; }
+  td, th { border: 1px solid #ddd; padding: 0.5em; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+  .status-pass { color: #1a6b3c; font-weight: 700; }
+  .status-warn { color: #8a6d00; font-weight: 700; }
+  .status-fail { color: #a12020; font-weight: 700; }
+  .status-info, .status-skip, .status-error { color: #555; font-weight: 700; }
+  .disclaimer { font-size: 0.9em; color: #555; border-left: 3px solid #ccc; padding-left: 0.8em; margin-top: 1.5em; }
+  code { background: #f0f0f0; padding: 0.1em 0.3em; border-radius: 3px; }
+  #result { display: none; }
+  .example { font-size: 0.9em; color: #555; }
+  .example a { cursor: pointer; color: #0645ad; }
+</style>
+</head>
+<body>
+<h1>🛡 MintGuard</h1>
+<p class="sub">A read-only pre-mint checker for BSC free-mint contracts. It inspects public on-chain data before you sign anything — it never signs, never sends a transaction, and never asks for a key.</p>
+
+<form id="form">
+  <label for="contract">Contract address (BSC)</label>
+  <input type="text" id="contract" placeholder="0x..." required>
+  <p class="example">Try:
+    <a data-c="0xdEAa9aaec224c7429dA2501b159aaf8D79019Ba3" data-f="mint">Flaggies NFT (verified, sold out)</a> ·
+    <a data-c="0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c" data-f="">WBNB (verified ERC-20)</a>
+  </p>
+  <label for="fn">Mint function (optional)</label>
+  <input type="text" id="fn" placeholder="mint  or  mint(uint256)">
+  <label for="args">Arguments, comma-separated (optional)</label>
+  <input type="text" id="args" placeholder="1">
+  <button type="submit" id="btn">Check contract</button>
+</form>
+
+<div id="result">
+  <div id="verdict"></div>
+  <p id="explanation"></p>
+  <table>
+    <thead><tr><th>Check</th><th>Status</th><th>What was found</th></tr></thead>
+    <tbody id="checks"></tbody>
+  </table>
+  <p class="disclaimer" id="disclaimer"></p>
+  <details><summary>Raw JSON</summary><pre id="raw"></pre></details>
+</div>
+
+<p class="disclaimer">MintGuard checks what can be checked from public data: bytecode presence, Sourcify source verification, ABI, owner, token metadata, and a static simulation of the mint call. A <b>SAFE_TO_REVIEW</b> verdict means the checks found no problem — it is not a promise that minting is safe. Verified code can still contain a backdoor. Always read the source yourself before signing.</p>
+<p>API: <code>POST /api/check</code> with <code>{"contract":"0x...","function":"mint","args":[1]}</code>. Source: <a href="https://github.com/jeffmarket12/mintguard">github.com/jeffmarket12/mintguard</a>.</p>
+
+<script>
+const form = document.getElementById('form');
+document.querySelectorAll('.example a').forEach(a => {
+  a.addEventListener('click', () => {
+    document.getElementById('contract').value = a.dataset.c;
+    document.getElementById('fn').value = a.dataset.f;
+  });
+});
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('btn');
+  btn.disabled = true; btn.textContent = 'Checking…';
+  const body = { contract: document.getElementById('contract').value.trim() };
+  const fn = document.getElementById('fn').value.trim();
+  if (fn) body.function = fn;
+  const args = document.getElementById('args').value.trim();
+  if (args) body.args = args.split(',').map(s => s.trim()).filter(Boolean);
+  try {
+    const res = await fetch('/api/check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const report = await res.json();
+    document.getElementById('result').style.display = 'block';
+    const v = document.getElementById('verdict');
+    v.textContent = report.verdict || report.error || 'ERROR';
+    v.className = 'verdict ' + (report.verdict || '');
+    document.getElementById('explanation').textContent = report.verdictExplanation || report.detail || '';
+    document.getElementById('checks').innerHTML = (report.checks || []).map(c =>
+      `<tr><td>${c.label}</td><td class="status-${c.status}">${c.status}</td><td>${c.detail}<br><small><b>Proves:</b> ${c.proves}<br><b>Does not prove:</b> ${c.doesNotProve}</small></td></tr>`
+    ).join('');
+    document.getElementById('disclaimer').textContent = report.disclaimer || '';
+    document.getElementById('raw').textContent = JSON.stringify(report, null, 2);
+  } catch (err) {
+    alert('Request failed: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Check contract';
+  }
+});
+</script>
+</body>
+</html>

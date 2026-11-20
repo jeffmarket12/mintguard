@@ -33,10 +33,10 @@ Every check reports what it **proves** and what it **does not prove**. The verdi
 
 ## Try it
 
-Live demo: `https://<deployment>.vercel.app/` (form + API)
+Live demo: https://mintguard-virid.vercel.app/ (form + API)
 
 ```bash
-curl -X POST https://<deployment>.vercel.app/api/check \
+curl -X POST https://mintguard-virid.vercel.app/api/check \
   -H 'content-type: application/json' \
   -d '{"contract":"0xdEAa9aaec224c7429dA2501b159aaf8D79019Ba3","function":"mint","args":[1]}'
 ```
